@@ -102,7 +102,7 @@ Want to look around first? Run `npm run demo` from the `app` folder to open Cair
 | To… | Do this |
 |---|---|
 | Add a task | Type in **Add a task…** at the bottom of a project and press Enter. The box stays open for the next one. |
-| Add a subtask | A task's **⋯** menu → *Add subtask*, or **Add a subtask…** in its details panel |
+| Add a subtask | Hover a task and click its **Add subtask** button (also on board cards), or use the **⋯** menu or the details panel |
 | Complete a task | Tick its checkbox, or drag its card to *Done* on the board |
 | Mark work in progress | Drag the card to *In progress*, or use the status buttons in the details panel |
 | Open details, notes, deadline, repeat | Click the task's name or its board card |
@@ -110,6 +110,8 @@ Want to look around first? Run `npm run demo` from the `app` folder to open Cair
 | Make a task a subtask | Drag it onto the middle of another task |
 | Move to another project | Drag it onto the project in the sidebar, or use **⋯** → *Move to…* |
 | Undo a mistake | **Ctrl+Z**, or the arrows in the top-right corner, or **Undo** on the toast |
+| Reorder projects | Drag them up or down in the sidebar |
+| Change a project's colour | Click the coloured dot next to its name, or **⋯** → *Change colour…* |
 | Archive a finished project | The project's **⋯** menu → *Archive project* |
 | See a day's history | Click a square in any activity grid, or a day in the calendar |
 

@@ -257,7 +257,13 @@ a { color: var(--accent-text); text-underline-offset: 2px; }
 .children { margin-left: 26px; padding-left: 6px; border-left: 1px solid var(--line); }
 .more { opacity: 0; }
 .task-line:hover .more, .kcard:hover .more, .more:focus-visible { opacity: 1; }
-@media (hover: none) { .more, .grip { opacity: 0.7; } }
+/* Add-subtask button: shown on hover like the menu, but in the accent colour so it reads as an action. */
+.row-action { opacity: 0; color: var(--accent-text); }
+.task-line:hover .row-action, .kcard:hover .row-action, .row-action:focus-visible { opacity: 1; }
+.row-action:hover:not(:disabled) { color: var(--accent-text); background: var(--active); }
+.kcard-top .add-sub-button { margin-left: auto; height: 24px; }
+.kcard-top .add-sub-button + .more, .kcard-top .notes-mark + .add-sub-button { margin-left: 0; }
+@media (hover: none) { .more, .grip, .row-action { opacity: 0.7; } }
 .badge {
   font-size: 11.5px; font-weight: 550; padding: 0 8px; border-radius: 999px; line-height: 20px;
   background: var(--surface-3); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums;
@@ -551,6 +557,32 @@ button.small-button { height: 26px; padding: 0 10px; font-size: 12px; }
 .completion-check.due-overdue { color: var(--red); }
 .completion-check.due-today, .completion-check.due-soon, .completion-check.due-later { color: var(--orange); }
 .card .badge.due span { font-size: 11px; }
+
+/* ---- Project order and colour ---- */
+.side-project { position: relative; }
+.side-project.drop-before::before, .side-project.drop-after::after {
+  content: ""; position: absolute; left: 8px; right: 8px; height: 2px; border-radius: 2px; background: var(--accent); pointer-events: none;
+}
+.side-project.drop-before::before { top: -2px; }
+.side-project.drop-after::after { bottom: -2px; }
+.side-project.dragging { opacity: 0.35; }
+.side-project.ghost { background: var(--surface-2); border: 1px solid var(--line-strong); width: 216px; }
+.project-dot.big.clickable { cursor: pointer; transition: transform 0.12s; }
+.project-dot.big.clickable:hover { transform: scale(1.25); }
+.swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin: 4px 0 6px; }
+.swatch {
+  height: 44px; padding: 0; border-radius: 10px; background: var(--swatch); border: 2px solid transparent; box-shadow: none;
+}
+.swatch:hover { background: var(--swatch); transform: scale(1.06); }
+.swatch.selected { border-color: var(--text); box-shadow: 0 0 0 2px var(--surface) inset; }
+.swatch-buttons { justify-content: flex-start; align-items: center; }
+.swatch-buttons > button:last-child { margin-left: auto; }
+.swatch-buttons .active { border-color: var(--accent); color: var(--accent-text); }
+.swatch-custom {
+  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 6px 0 12px; cursor: pointer;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-2); font-weight: 550; font-size: 13px;
+}
+.swatch-custom input { width: 26px; height: 22px; padding: 0; border: 0; background: none; cursor: pointer; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }

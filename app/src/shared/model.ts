@@ -66,6 +66,8 @@ export interface Project {
   created: string;
   /** Hidden from the overview, sidebar list and board; history is kept. Absent when false. */
   archived?: boolean;
+  /** Chosen colour ("#rrggbb"); absent means an automatic colour from the id. */
+  color?: string;
   tasks: Task[];
 }
 
@@ -82,7 +84,9 @@ export interface Data {
 
 export type Op =
   | { type: "addProject"; id: string; name: string; description: string }
-  | { type: "updateProject"; projectId: string; name?: string; description?: string; archived?: boolean }
+  | { type: "updateProject"; projectId: string; name?: string; description?: string; archived?: boolean; color?: string | null }
+  /** Reorder projects: put one before `beforeId`, or last when null. */
+  | { type: "moveProject"; projectId: string; beforeId: string | null }
   | { type: "deleteProject"; projectId: string }
   | { type: "addTask"; projectId: string; id: string; text: string; parentId?: string }
   | { type: "editTask"; taskId: string; text?: string; notes?: string; due?: string | null }
@@ -118,6 +122,7 @@ export function emptyData(): Data {
 // in anything missing, rather than failing on a small mistake.
 // ---------------------------------------------------------------------------
 
+const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function str(v: unknown, fallback = ""): string {
@@ -189,6 +194,7 @@ export function parseData(json: string, today: string): Data {
         description: str(pr.description),
         created: DATE_RE.test(str(pr.created)) ? str(pr.created) : today,
         ...(pr.archived === true ? { archived: true } : {}),
+        ...(COLOR_RE.test(str(pr.color)) ? { color: str(pr.color).toLowerCase() } : {}),
         tasks: Array.isArray(pr.tasks) ? pr.tasks.map((t) => normTask(t, today, ids)) : [],
       };
     }),
@@ -397,6 +403,11 @@ function applyOp(input: Data, data: Data, op: Op, today: string): Data {
         p.name = name;
       }
       if (op.description !== undefined) p.description = op.description.trim();
+      if (op.color === null) delete p.color;
+      else if (op.color !== undefined) {
+        if (!COLOR_RE.test(op.color)) throw new OpError("That isn't a valid colour.");
+        p.color = op.color.toLowerCase();
+      }
       if (op.archived === true) p.archived = true;
       else if (op.archived === false) delete p.archived;
       break;
@@ -499,6 +510,20 @@ function applyOp(input: Data, data: Data, op: Op, today: string): Data {
       else destAncestors.forEach(reopen);
       break;
     }
+    case "moveProject": {
+      const from = data.projects.findIndex((p) => p.id === op.projectId);
+      if (from < 0) throw new OpError("That project no longer exists. It may have been changed on another computer.");
+      if (op.beforeId === op.projectId) return input;
+      const [project] = data.projects.splice(from, 1);
+      let to = data.projects.length;
+      if (op.beforeId !== null) {
+        to = data.projects.findIndex((p) => p.id === op.beforeId);
+        if (to < 0) throw new OpError("Couldn't find where to put that project. It may have changed on another computer.");
+      }
+      if (to === from) return input;
+      data.projects.splice(to, 0, project);
+      break;
+    }
     case "restore": {
       const restoring = new Set(op.projects.map((x) => x.projectId));
       // Task ids must stay unique across the file; drop anything that now
@@ -591,6 +616,7 @@ function projectsOf(data: Data, op: Op): string[] {
   switch (op.type) {
     case "addProject": ids = [op.id]; break;
     case "updateProject": case "deleteProject": ids = [op.projectId]; break;
+    case "moveProject": ids = []; break; // handled in undoFor: order, not content
     case "restore": ids = op.projects.map((x) => x.projectId); break;
     case "addTask": ids = [op.parentId ? at(op.parentId) ?? op.projectId : op.projectId]; break;
     case "editTask": case "deleteTask": case "setStatus": case "setRepeat": case "wakeTask": ids = [at(op.taskId)]; break;
@@ -606,6 +632,12 @@ function projectsOf(data: Data, op: Op): string[] {
  * other projects (say, on another computer in the meantime) are left alone.
  */
 export function undoFor(before: Data, op: Op): Op | null {
+  if (op.type === "moveProject") {
+    // Reordering changes no project's content, so undo puts it back where it was.
+    const i = before.projects.findIndex((p) => p.id === op.projectId);
+    if (i < 0) return null;
+    return { type: "moveProject", projectId: op.projectId, beforeId: before.projects[i + 1]?.id ?? null };
+  }
   const ids = projectsOf(before, op);
   if (!ids.length) return null;
   return {

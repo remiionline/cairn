@@ -95,7 +95,9 @@ function describe(op: Op, data: Data): string {
   const proj = (id: string) => `"${data.projects.find((p) => p.id === id)?.name ?? "project"}"`;
   switch (op.type) {
     case "addProject": return `create project "${op.name}"`;
+    case "moveProject": return `reorder project ${proj(op.projectId)}`;
     case "updateProject":
+      if (op.color !== undefined) return `change the colour of ${proj(op.projectId)}`;
       if (op.archived !== undefined) return `${op.archived ? "archive" : "unarchive"} project ${proj(op.projectId)}`;
       return `edit project ${proj(op.projectId)}`;
     case "deleteProject": return `delete project ${proj(op.projectId)}`;
@@ -161,7 +163,15 @@ function refreshHistoryButtons() {
   if (r) { r.disabled = !redoStack.length; r.title = redoStack.length ? `Redo ${top(redoStack).label} (Ctrl+Y)` : "Nothing to redo"; }
 }
 
+/** Colours offered in the picker: distinct in both themes. */
+const PROJECT_COLORS: [string, string][] = [
+  ["#6c7cf0", "Blue"], ["#9b6cf0", "Violet"], ["#e05cc2", "Pink"], ["#ef5b5b", "Red"],
+  ["#f08a4b", "Orange"], ["#e8b93c", "Amber"], ["#8cc63f", "Lime"], ["#3cc47c", "Green"],
+  ["#2bb7a8", "Teal"], ["#3aa6e8", "Sky"], ["#a0785a", "Brown"], ["#8a94a6", "Slate"],
+];
+
 function projectColor(p: Project): string {
+  if (p.color) return p.color;
   let h = 0;
   for (const ch of p.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return `hsl(${h % 360}, 55%, 58%)`;
@@ -305,6 +315,7 @@ function renderSidebar(parent: HTMLElement, data: Data, file: string) {
     const n = openTasks(p).length;
     if (n && !p.archived) span(b, "label side-count", String(n));
     b.addEventListener("click", () => go({ mode: "project", projectId: p.id, projectDay: null }));
+    enableProjectDrag(b, p);
   };
   activeProjects(data).forEach(projectItem);
   if (!data.projects.length) div(list, "label side-empty", "No projects yet");
@@ -337,9 +348,13 @@ function renderSidebar(parent: HTMLElement, data: Data, file: string) {
 }
 
 /** Page title on the left; returns the actions slot. Undo/redo sit at the far right. */
-function renderTopbar(top: HTMLElement, title: string, sub?: string, color?: string): HTMLElement {
+function renderTopbar(top: HTMLElement, title: string, sub?: string, color?: string, onDot?: () => void): HTMLElement {
   const t = div(top, "page-title");
-  if (color) { t.style.setProperty("--project-color", color); span(t, "project-dot big"); }
+  if (color) {
+    t.style.setProperty("--project-color", color);
+    const dot = span(t, "project-dot big");
+    if (onDot) { dot.classList.add("clickable"); dot.title = "Change colour"; dot.addEventListener("click", onDot); }
+  }
   const words = div(t, "page-words");
   el(words, "h1", { text: title, title });
   if (sub) span(words, "page-sub", sub);
@@ -484,6 +499,9 @@ function renderTask(container: HTMLElement, p: Project, t: Task, hideDone: boole
     el(meta, "span", { cls: "badge", text: `${c.done}/${c.total}`, title: "Subtasks done" });
   }
   if (t.status === "done" && t.completed) span(meta, "date", shortDate(t.completed));
+  if (reorder && t.status !== "done") {
+    iconButton(line, "listPlus", "Add subtask", () => { draft = { key: t.id, kind: "add-sub", value: "" }; render(); }, "row-action add-sub-button");
+  }
   iconButton(line, "more", "Task actions", (e) => taskMenu(e, p, t), "more");
 
   const kids = t.subtasks.filter((c) => !(hideDone && c.status === "done"));
@@ -497,6 +515,63 @@ function renderTask(container: HTMLElement, p: Project, t: Task, hideDone: boole
       inlineInput(r, t.id, "add-sub", "Add a subtask…", "", (v) => run({ type: "addTask", projectId: p.id, id: newId(), text: v, parentId: t.id }));
     }
   }
+}
+
+/** Drag a project in the sidebar up or down to reorder it. */
+function enableProjectDrag(item: HTMLElement, p: Project) {
+  let place: { id: string; after: boolean } | null = null;
+  cleanups.push(makeDraggable(item, {
+    dropSelector: (hit) => {
+      const target = hit?.closest<HTMLElement>(".side-project") ?? null;
+      return target && target !== item && !!target.classList.contains("archived") === !!p.archived ? target : null;
+    },
+    onMove: (target, _x, y) => {
+      clearDropMarks();
+      place = null;
+      if (!target) return;
+      const r = target.getBoundingClientRect();
+      const after = y > r.top + r.height / 2;
+      place = { id: target.dataset.project!, after };
+      target.classList.remove("drop-over");
+      target.classList.add(after ? "drop-after" : "drop-before");
+    },
+    onDrop: () => {
+      const data = currentData();
+      if (!place || !data) return;
+      const list = data.projects;
+      const i = list.findIndex((x) => x.id === place!.id);
+      const beforeId = place.after ? list[i + 1]?.id ?? null : place.id;
+      const own = list.findIndex((x) => x.id === p.id);
+      if (beforeId === p.id || beforeId === (list[own + 1]?.id ?? null)) return;
+      run({ type: "moveProject", projectId: p.id, beforeId });
+    },
+    onEnd: clearDropMarks,
+  }));
+}
+
+/** Pick a project's colour: a palette plus "Automatic". */
+function colorDialog(p: Project) {
+  modal(`Colour for "${p.name}"`, (body, close) => {
+    const grid = div(body, "swatches");
+    const pick = (color: string | null) => {
+      close();
+      if ((color ?? undefined) !== p.color) run({ type: "updateProject", projectId: p.id, color });
+    };
+    for (const [hex, name] of PROJECT_COLORS) {
+      const b = el(grid, "button", { cls: `swatch${p.color === hex ? " selected" : ""}`, attr: { "aria-label": name }, title: name });
+      b.style.setProperty("--swatch", hex);
+      b.addEventListener("click", () => pick(hex));
+    }
+    const row = div(body, "modal-buttons swatch-buttons");
+    const auto = button(row, "Automatic", () => pick(null), p.color ? "" : "active");
+    auto.title = "A colour picked from the project's id";
+    const custom = el(row, "label", { cls: "swatch-custom", title: "Any colour" });
+    span(custom, "", "Custom…");
+    const input = el(custom, "input", { attr: { type: "color", "aria-label": "Custom colour" } });
+    input.value = p.color ?? "#6c7cf0";
+    input.addEventListener("change", () => pick(input.value));
+    button(row, "Cancel", close);
+  });
 }
 
 type DropPlace =
@@ -709,7 +784,7 @@ function renderOverview(top: HTMLElement, body: HTMLElement, data: Data) {
 
 function renderProject(top: HTMLElement, body: HTMLElement, data: Data) {
   const p = data.projects.find((x) => x.id === ui.projectId) ?? data.projects[0];
-  const actions = renderTopbar(top, p.name, p.archived ? "Archived" : projectStats(p), projectColor(p));
+  const actions = renderTopbar(top, p.name, p.archived ? "Archived" : projectStats(p), projectColor(p), () => colorDialog(p));
   const setArchived = async (archived: boolean) => {
     if (await run({ type: "updateProject", projectId: p.id, archived })) {
       toast(archived ? `Archived "${p.name}"` : `Restored "${p.name}"`, { label: "Undo", onClick: () => undo() });
@@ -727,6 +802,7 @@ function renderProject(top: HTMLElement, body: HTMLElement, data: Data) {
         { key: "description", label: "Description", value: p.description, multiline: true },
       ], "Save", (v) => run({ type: "updateProject", projectId: p.id, name: v.name, description: v.description })),
     },
+    { label: "Change colour…", icon: "palette", onClick: () => colorDialog(p) },
     p.archived
       ? { label: "Unarchive project", icon: "reopen", onClick: () => setArchived(false) }
       : { label: "Archive project", icon: "archive", onClick: () => setArchived(true) },
@@ -867,6 +943,9 @@ function renderCard(list: HTMLElement, p: Project, t: Task, path: Task[], showPr
   if (showProject) span(top, "chip", p.name);
   if (t.notes) el(top, "span", { cls: "notes-mark", title: t.notes.slice(0, 300) }).appendChild(icon("notes"));
   card.addEventListener("click", (e) => { if (!(e.target as HTMLElement).closest("button, a")) openDetails(t.id); });
+  if (t.status !== "done") {
+    iconButton(top, "listPlus", "Add subtask", () => { draft = { key: `drawer:${t.id}`, kind: "add-sub", value: "" }; openDetails(t.id); }, "row-action add-sub-button");
+  }
   iconButton(top, "more", "Task actions", (e) => taskMenu(e, p, t), "more");
   renderText(div(card, "kcard-text task-text"), t.text);
 

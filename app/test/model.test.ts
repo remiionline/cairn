@@ -405,3 +405,37 @@ test("a repeating task's copy moves its deadlines forward", () => {
   e = run(e, { type: "setStatus", taskId: "alpha", status: "done" });
   assert.equal(e.projects[0].tasks.find((t) => t.repeatFrom === "alpha")!.due, "2026-11-12");
 });
+
+// ---- Project order and colour ----
+
+function threeProjects(): Data {
+  const d = sample();
+  d.projects.push({ id: "p2", name: "Garden", description: "", created: T, tasks: [] });
+  d.projects.push({ id: "p3", name: "Garage", description: "", created: T, tasks: [] });
+  return d;
+}
+const order = (d: Data) => d.projects.map((p) => p.id);
+
+test("projects can be reordered, and undo puts them back", () => {
+  const before = threeProjects();
+  for (const op of [
+    { type: "moveProject", projectId: "p3", beforeId: "p1" },
+    { type: "moveProject", projectId: "p1", beforeId: null },
+    { type: "moveProject", projectId: "p1", beforeId: "p3" },
+  ] as Op[]) {
+    const after = run(before, op);
+    const inverse = undoFor(before, op)!;
+    assert.deepEqual(order(run(after, inverse)), order(before));
+  }
+  assert.deepEqual(order(run(before, { type: "moveProject", projectId: "p3", beforeId: "p1" })), ["p3", "p1", "p2"]);
+  assert.deepEqual(order(run(before, { type: "moveProject", projectId: "p1", beforeId: null })), ["p2", "p3", "p1"]);
+});
+
+test("a project colour can be chosen, cleared, and survives the file", () => {
+  let d = run(sample(), { type: "updateProject", projectId: "p1", color: "#E05CC2" });
+  assert.equal(d.projects[0].color, "#e05cc2");
+  assert.equal(parseData(serialize(d), T).projects[0].color, "#e05cc2");
+  d = run(d, { type: "updateProject", projectId: "p1", color: null });
+  assert.equal("color" in d.projects[0], false);
+  assert.throws(() => run(sample(), { type: "updateProject", projectId: "p1", color: "red" }), OpError);
+});

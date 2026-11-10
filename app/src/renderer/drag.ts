@@ -89,7 +89,9 @@ export function makeDraggable(card: HTMLElement, opts: DragOptions): () => void 
 
   const onDown = (e: PointerEvent) => {
     if (e.button !== 0 || pointerId !== null) return;
-    if ((e.target as HTMLElement).closest("button, input, a, textarea, select, .no-drag")) return;
+    // Controls inside the draggable element keep working (the element itself may be a button).
+    const control = (e.target as HTMLElement).closest("button, input, a, textarea, select, .no-drag");
+    if (control && control !== card) return;
     pointerId = e.pointerId;
     isTouch = e.pointerType === "touch";
     startX = e.clientX; startY = e.clientY;
