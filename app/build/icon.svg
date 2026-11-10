@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Cairn: three stacked stones on a violet tile. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9a8cff"/>
+      <stop offset="1" stop-color="#6450e0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <!-- ground line -->
+  <rect x="96" y="388" width="320" height="14" rx="7" fill="#ffffff" opacity="0.28"/>
+  <!-- stones, largest at the bottom -->
+  <rect x="116" y="294" width="280" height="80" rx="40" fill="#ffffff" opacity="0.72"/>
+  <rect x="156" y="206" width="206" height="74" rx="37" fill="#ffffff" opacity="0.88" transform="rotate(-4 259 243)"/>
+  <rect x="196" y="124" width="132" height="68" rx="34" fill="#ffffff" transform="rotate(3 262 158)"/>
+</svg>
