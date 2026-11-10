@@ -1,7 +1,7 @@
 {
   "name": "cairn",
   "productName": "Cairn",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Cairn: projects, tasks, a kanban board and completion calendars in one portable data file.",
   "author": "remii.online",
   "private": true,
