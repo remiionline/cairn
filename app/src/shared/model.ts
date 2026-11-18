@@ -91,7 +91,10 @@ export type Op =
   | { type: "addTask"; projectId: string; id: string; text: string; parentId?: string }
   | { type: "editTask"; taskId: string; text?: string; notes?: string; due?: string | null }
   | { type: "deleteTask"; taskId: string }
-  | { type: "setStatus"; taskId: string; status: Status }
+  /** `date` (done only): when it was actually finished, for tasks ticked off late. Defaults to today. */
+  | { type: "setStatus"; taskId: string; status: Status; date?: string }
+  /** Change the completion date of a finished task. */
+  | { type: "setCompleted"; taskId: string; date: string }
   /**
    * Move a task before `beforeId` (or to the end when null). Without
    * `parentId`/`projectId` it is reordered among its current siblings;
@@ -367,6 +370,13 @@ function mustFind(data: Data, taskId: string): Located {
   return l;
 }
 
+/** A completion date: a real YYYY-MM-DD that isn't in the future. */
+function checkPastDate(date: string, today: string): string {
+  if (!DATE_RE.test(date) || isNaN(parseIso(date).getTime()) || isoDate(parseIso(date)) !== date) throw new OpError("That isn't a valid date.");
+  if (date > today) throw new OpError("A task can't be completed in the future.");
+  return date;
+}
+
 function mustProject(data: Data, projectId: string): Project {
   const p = data.projects.find((x) => x.id === projectId);
   if (!p) throw new OpError("That project no longer exists. It may have been changed on another computer.");
@@ -461,12 +471,27 @@ function applyOp(input: Data, data: Data, op: Op, today: string): Data {
       const t = l.task;
       if (t.status === op.status) return input;
       if (op.status === "done") {
-        completeTree(t, today);
-        rollUp(l.ancestors, today);
+        const when = op.date === undefined ? today : checkPastDate(op.date, today);
+        completeTree(t, when);
+        rollUp(l.ancestors, when);
       } else {
         t.status = op.status;
         t.completed = null;
         l.ancestors.forEach(reopen);
+      }
+      break;
+    }
+    case "setCompleted": {
+      const l = mustFind(data, op.taskId);
+      const t = l.task;
+      if (t.status !== "done") throw new OpError("Only finished tasks have a completion date.");
+      const date = checkPastDate(op.date, today);
+      if (t.completed === date) return input;
+      t.completed = date;
+      // A repeating task's waiting copy comes back counted from the real day.
+      if (t.repeat && !l.ancestors.length) {
+        const copy = l.siblings.find((x) => x.repeatFrom === t.id);
+        if (copy && copy.waitUntil && copy.status === "todo") copy.waitUntil = nextRepeat(date, t.repeat);
       }
       break;
     }
@@ -590,7 +615,8 @@ function syncRepeats(before: Data, after: Data, today: string) {
       if (!t.repeat) continue;
       const copyAt = p.tasks.findIndex((x) => x.repeatFrom === t.id);
       if (t.status === "done" && !wasDone.has(t.id) && copyAt < 0) {
-        const waitUntil = nextRepeat(today, t.repeat);
+        // Counted from the day it was actually finished (it may be back-dated).
+        const waitUntil = nextRepeat(t.completed ?? today, t.repeat);
         const rule = t.repeat;
         // Deadlines move forward one interval at a time until they're no
         // earlier than the day the copy comes back.
@@ -619,7 +645,7 @@ function projectsOf(data: Data, op: Op): string[] {
     case "moveProject": ids = []; break; // handled in undoFor: order, not content
     case "restore": ids = op.projects.map((x) => x.projectId); break;
     case "addTask": ids = [op.parentId ? at(op.parentId) ?? op.projectId : op.projectId]; break;
-    case "editTask": case "deleteTask": case "setStatus": case "setRepeat": case "wakeTask": ids = [at(op.taskId)]; break;
+    case "editTask": case "deleteTask": case "setStatus": case "setCompleted": case "setRepeat": case "wakeTask": ids = [at(op.taskId)]; break;
     case "moveTask": ids = [at(op.taskId), op.projectId]; break;
     case "updateSettings": ids = []; break;
   }

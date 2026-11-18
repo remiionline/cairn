@@ -439,3 +439,46 @@ test("a project colour can be chosen, cleared, and survives the file", () => {
   assert.equal("color" in d.projects[0], false);
   assert.throws(() => run(sample(), { type: "updateProject", projectId: "p1", color: "red" }), OpError);
 });
+
+// ---- Completion dates ----
+
+test("a task can be completed on an earlier date, along with its subtasks and parents", () => {
+  const d = run(sample(), { type: "setStatus", taskId: "b2a", status: "done", date: "2026-11-02" });
+  assert.equal(get(d, "b2a").completed, "2026-11-02");
+  // b2a was the last open subtask: b2 and beta complete on the same day.
+  assert.equal(get(d, "b2").completed, "2026-11-02");
+  assert.equal(get(d, "beta").completed, "2026-11-02");
+  const e = run(sample(), { type: "setStatus", taskId: "beta", status: "done", date: "2026-11-01" });
+  assert.equal(get(e, "b2a").completed, "2026-11-01");
+  assert.equal(get(e, "b1").completed, "2026-11-01"); // already done: keeps its own date
+});
+
+test("a finished task's completion date can be changed", () => {
+  let d = run(sample(), { type: "setCompleted", taskId: "old", date: "2026-10-05" });
+  assert.equal(get(d, "old").completed, "2026-10-05");
+  assert.deepEqual(completions(d.projects).find((c) => c.task.id === "old")!.date, "2026-10-05");
+  d = run(d, { type: "setCompleted", taskId: "old", date: T });
+  assert.equal(get(d, "old").completed, T);
+});
+
+test("completion dates can't be in the future or invalid, and open tasks have none", () => {
+  assert.throws(() => run(sample(), { type: "setCompleted", taskId: "old", date: "2026-11-05" }), OpError);
+  assert.throws(() => run(sample(), { type: "setCompleted", taskId: "old", date: "2026-02-30" }), OpError);
+  assert.throws(() => run(sample(), { type: "setCompleted", taskId: "alpha", date: "2026-11-01" }), OpError);
+  assert.throws(() => run(sample(), { type: "setStatus", taskId: "alpha", status: "done", date: "2027-01-01" }), OpError);
+});
+
+test("a repeating task counts its next return from the real completion day", () => {
+  let d = weekly();
+  d = run(d, { type: "setStatus", taskId: "alpha", status: "done", date: "2026-11-01" });
+  const copy = () => d.projects[0].tasks.find((t) => t.repeatFrom === "alpha")!;
+  assert.equal(copy().waitUntil, "2026-11-08");
+  d = run(d, { type: "setCompleted", taskId: "alpha", date: "2026-10-30" });
+  assert.equal(copy().waitUntil, "2026-11-06");
+});
+
+test("undo restores the old completion date", () => {
+  const before = sample();
+  const op: Op = { type: "setCompleted", taskId: "old", date: "2026-10-01" };
+  assert.deepEqual(run(run(before, op), undoFor(before, op)!), before);
+});

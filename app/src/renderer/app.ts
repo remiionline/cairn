@@ -106,7 +106,8 @@ function describe(op: Op, data: Data): string {
       if (op.due !== undefined) return `${op.due ? "set deadline on" : "clear deadline on"} ${taskName(data, op.taskId)}`;
       return op.text === undefined ? `edit notes of ${taskName(data, op.taskId)}` : `rename ${taskName(data, op.taskId)}`;
     case "deleteTask": return `delete ${taskName(data, op.taskId)}`;
-    case "setStatus": return `${op.status === "done" ? "complete" : op.status === "doing" ? "start" : "reopen"} ${taskName(data, op.taskId)}`;
+    case "setStatus": return `${op.status === "done" ? "complete" : op.status === "doing" ? "start" : "reopen"} ${taskName(data, op.taskId)}${op.date && op.date !== today() ? ` on ${shortDate(op.date)}` : ""}`;
+    case "setCompleted": return `change when ${taskName(data, op.taskId)} was completed`;
     case "moveTask": return `move ${taskName(data, op.taskId)}`;
     case "setRepeat": return op.repeat ? `set ${taskName(data, op.taskId)} to repeat` : `stop repeating ${taskName(data, op.taskId)}`;
     case "wakeTask": return `bring back ${taskName(data, op.taskId)}`;
@@ -128,7 +129,7 @@ async function run(op: Op): Promise<boolean> {
   if (op.type === "setStatus" && op.status === "done" && before) {
     const l = locate(before, op.taskId);
     if (l && !l.ancestors.length && l.task.repeat && l.task.status !== "done") {
-      toast(`"${l.task.text}" will come back ${whenBack(nextRepeat(today(), l.task.repeat))}`, { label: "Undo", onClick: () => undo() });
+      toast(`"${l.task.text}" will come back ${whenBack(nextRepeat(op.date ?? today(), l.task.repeat))}`, { label: "Undo", onClick: () => undo() });
     }
   }
   if (op.type === "deleteTask" || op.type === "deleteProject") {
@@ -670,6 +671,7 @@ function taskMenu(e: MouseEvent, p: Project, t: Task) {
       ? [{ label: "Reopen", icon: "reopen" as IconName, onClick: set("todo") }]
       : [
         { label: "Complete", icon: "check" as IconName, onClick: set("done") },
+        { label: "Completed earlier…", icon: "calendar" as IconName, onClick: () => completeOnDialog(t) },
         t.status === "doing"
           ? { label: "Stop working on it", icon: "pause" as IconName, onClick: set("todo") }
           : { label: "Start working on it", icon: "play" as IconName, onClick: set("doing") },
@@ -703,7 +705,10 @@ function renderCompletionList(parent: HTMLElement, cs: Completion[], showProject
     const item = div(list, "completion");
     span(item, "completion-check").appendChild(icon("check"));
     const body = div(item, "completion-body");
-    renderText(span(body, "task-text"), c.task.text);
+    const name = span(body, "task-text clickable", "");
+    renderText(name, c.task.text);
+    name.title = "Open details (change the completion date there)";
+    name.addEventListener("click", () => openDetails(c.task.id));
     const sub = div(body, "muted small completion-sub");
     if (showProject) {
       const chip = span(sub, "chip clickable", c.project.name);
@@ -1207,7 +1212,18 @@ function renderDrawer() {
 
   const dates = div(d, "drawer-dates");
   span(dates, "", `Created ${shortDate(t.created)}`);
-  if (t.completed) span(dates, "", `Completed ${shortDate(t.completed)}`);
+  if (t.status === "done" && t.completed) {
+    const lab = el(dates, "label", { cls: "completed-edit", title: "Change the day it was completed" });
+    span(lab, "", "Completed");
+    const input = el(lab, "input", { attr: { type: "date", max: today(), "aria-label": "Completion date" } });
+    input.value = t.completed;
+    input.addEventListener("change", () => {
+      if (input.value && input.value !== t.completed) run({ type: "setCompleted", taskId: t.id, date: input.value });
+    });
+  } else {
+    const late = button(dates, "Finished earlier? Set the day", () => completeOnDialog(t), "link-button");
+    late.title = "Mark it done on the day you actually finished it";
+  }
 
   renderDeadlineControls(d, t);
   if (!ancestors.length) renderRepeatControls(d, t);
@@ -1258,6 +1274,33 @@ function renderDeadlineControls(d: HTMLElement, t: Task) {
       span(hint, "", n < 0 ? `${plural(-n, "day")} overdue` : n === 0 ? "Due today" : n === 1 ? "Due tomorrow" : `Due in ${plural(n, "day")}, ${formatDay(t.due)}`);
     }
   }
+}
+
+/** Mark an open task done on an earlier day (for when you forgot to tick it off). */
+function completeOnDialog(t: Task) {
+  modal(`When did you finish "${t.text}"?`, (body, close) => {
+    const form = el(body, "form");
+    const now = today();
+    const row = div(form, "completed-on-row");
+    const input = el(row, "input", { attr: { type: "date", max: now, "aria-label": "Completion date" } });
+    input.value = addDays(now, -1);
+    for (const [label, n] of [["Today", 0], ["Yesterday", -1], ["2 days ago", -2]] as [string, number][]) {
+      button(row, label, () => { input.value = addDays(now, n); }, "small-button");
+    }
+    if (t.subtasks.some((c) => c.status !== "done")) {
+      el(form, "p", { cls: "muted small", text: "Its unfinished subtasks will be marked done on the same day." });
+    }
+    const buttons = div(form, "modal-buttons");
+    button(buttons, "Cancel", (e) => { e.preventDefault(); close(); });
+    el(buttons, "button", { cls: "primary", text: "Mark as done", attr: { type: "submit" } });
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (!input.value) { toast("Pick a day."); return; }
+      if (input.value > now) { toast("That day hasn't happened yet."); return; }
+      close();
+      run({ type: "setStatus", taskId: t.id, status: "done", date: input.value });
+    });
+  });
 }
 
 const REPEAT_PRESETS: [string, Repeat | null][] = [

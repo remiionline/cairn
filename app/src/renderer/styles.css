@@ -584,6 +584,18 @@ button.small-button { height: 26px; padding: 0 10px; font-size: 12px; }
 }
 .swatch-custom input { width: 26px; height: 22px; padding: 0; border: 0; background: none; cursor: pointer; }
 
+/* ---- Completion dates ---- */
+.drawer-dates { align-items: center; flex-wrap: wrap; }
+.completed-edit { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+.completed-edit input { height: 28px; padding: 0 8px; font-size: 12.5px; }
+button.link-button {
+  height: auto; padding: 0; background: none; border: 0; box-shadow: none;
+  color: var(--accent-text); font-weight: 500; font-size: 12px;
+}
+button.link-button:hover { background: none; text-decoration: underline; text-underline-offset: 2px; }
+.completed-on-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.completed-on-row input[type="date"] { height: 32px; padding: 0 8px; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
